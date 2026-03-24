@@ -55,7 +55,7 @@ export default function KanbanBoard({ tasks, projectId, onUpdate }: Props) {
             </div>
             <SortableContext items={byStatus(col.id).map(t => t.id)} strategy={verticalListSortingStrategy}>
               {byStatus(col.id).map(task => (
-                <TaskCard key={task.id} task={task} onUpdate={onUpdate} />
+                <TaskCard key={task.id} task={task} projectId={projectId} onUpdate={onUpdate} />
               ))}
             </SortableContext>
             {creating === col.id ? (

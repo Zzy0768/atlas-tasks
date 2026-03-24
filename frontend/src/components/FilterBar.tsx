@@ -1,8 +1,11 @@
 import { useState } from 'react'
 
-interface Props { onChange: (filters: Record<string, string>) => void }
+interface Props {
+  onChange: (filters: Record<string, string>) => void
+  inputRef?: React.RefObject<HTMLInputElement>
+}
 
-export default function FilterBar({ onChange }: Props) {
+export default function FilterBar({ onChange, inputRef }: Props) {
   const [f, setF] = useState({ q: '', status: '', priority: '', label: '' })
 
   const update = (key: string, value: string) => {
@@ -14,7 +17,7 @@ export default function FilterBar({ onChange }: Props) {
 
   return (
     <div className="flex flex-wrap gap-2 mb-4">
-      <input className="input text-sm w-40" placeholder="Search…" value={f.q}
+      <input ref={inputRef} className="input text-sm w-40" placeholder="Search… (/)" value={f.q}
         onChange={e => update('q', e.target.value)} />
       <select className="input text-sm" value={f.status} onChange={e => update('status', e.target.value)}>
         <option value="">All status</option>

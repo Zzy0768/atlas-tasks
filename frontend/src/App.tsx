@@ -3,6 +3,7 @@ import { useAuthStore } from './store/auth'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Board from './pages/Board'
+import Members from './pages/Members'
 
 export default function App() {
   const token = useAuthStore(s => s.token)
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/login" element={!token ? <Login /> : <Navigate to="/" />} />
         <Route path="/" element={token ? <Dashboard /> : <Navigate to="/login" />} />
         <Route path="/projects/:projectId/board" element={token ? <Board /> : <Navigate to="/login" />} />
+        <Route path="/projects/:projectId/members" element={token ? <Members /> : <Navigate to="/login" />} />
       </Routes>
     </BrowserRouter>
   )
