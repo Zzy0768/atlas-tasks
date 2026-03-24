@@ -1,0 +1,151 @@
+import { Router } from 'express'
+import { z } from 'zod'
+import { PrismaClient } from '@prisma/client'
+import { authenticate, AuthRequest } from '../middleware/auth'
+import { assertMember } from './projects'
+
+const router = Router()
+const prisma = new PrismaClient()
+
+const userSelect = { id: true, name: true }
+
+const taskInclude = {
+  owner: { select: userSelect },
+  assignee: { select: userSelect },
+  subtasks: { include: { owner: { select: userSelect }, assignee: { select: userSelect } } },
+}
+
+function parseTask(t: any) {
+  return { ...t, labels: JSON.parse(t.labels) }
+}
+
+router.use(authenticate)
+
+// GET /api/projects/:projectId/tasks
+router.get('/projects/:projectId/tasks', async (req: AuthRequest, res) => {
+  await assertMember(req.params.projectId, req.userId!)
+  const { status, assigneeId, priority, label, q } = req.query as Record<string, string>
+  const tasks = await prisma.task.findMany({
+    where: {
+      projectId: req.params.projectId,
+      parentTaskId: null,
+      ...(status && { status }),
+      ...(assigneeId && { assigneeId }),
+      ...(priority && { priority }),
+      ...(q && { title: { contains: q } }),
+    },
+    include: taskInclude,
+    orderBy: [{ status: 'asc' }, { order: 'asc' }],
+  })
+  const filtered = label
+    ? tasks.filter(t => JSON.parse(t.labels).includes(label))
+    : tasks
+  res.json(filtered.map(parseTask))
+})
+
+// POST /api/projects/:projectId/tasks
+router.post('/projects/:projectId/tasks', async (req: AuthRequest, res) => {
+  await assertMember(req.params.projectId, req.userId!)
+  const schema = z.object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    priority: z.enum(['low', 'medium', 'high']).default('medium'),
+    labels: z.array(z.string()).default([]),
+    dueDate: z.string().optional(),
+    startDate: z.string().optional(),
+    assigneeId: z.string().optional(),
+    parentTaskId: z.string().optional(),
+    recurrenceRule: z.enum(['daily', 'weekly', 'monthly']).optional(),
+  })
+  const data = schema.parse(req.body)
+  const maxOrder = await prisma.task.aggregate({ where: { projectId: req.params.projectId, status: 'todo' }, _max: { order: true } })
+  const task = await prisma.task.create({
+    data: {
+      ...data,
+      labels: JSON.stringify(data.labels),
+      dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+      startDate: data.startDate ? new Date(data.startDate) : undefined,
+      order: (maxOrder._max.order ?? -1) + 1,
+      projectId: req.params.projectId,
+      ownerId: req.userId!,
+    },
+    include: taskInclude,
+  })
+  if (data.assigneeId && data.assigneeId !== req.userId) {
+    await prisma.notification.create({
+      data: { type: 'task_assigned', message: `You were assigned to "${task.title}"`, userId: data.assigneeId, taskId: task.id },
+    })
+  }
+  await prisma.activityLog.create({ data: { action: 'created', taskId: task.id, userId: req.userId!, metadata: '{}' } })
+  res.status(201).json(parseTask(task))
+})
+
+// PATCH /api/tasks/:id
+router.patch('/:id', async (req: AuthRequest, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  await assertMember(task.projectId, req.userId!)
+  const schema = z.object({
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    status: z.enum(['todo', 'in_progress', 'done']).optional(),
+    priority: z.enum(['low', 'medium', 'high']).optional(),
+    labels: z.array(z.string()).optional(),
+    dueDate: z.string().nullable().optional(),
+    startDate: z.string().nullable().optional(),
+    assigneeId: z.string().nullable().optional(),
+    recurrenceRule: z.enum(['daily', 'weekly', 'monthly']).nullable().optional(),
+  })
+  const data = schema.parse(req.body)
+  const updated = await prisma.task.update({
+    where: { id: req.params.id },
+    data: {
+      ...data,
+      ...(data.labels !== undefined && { labels: JSON.stringify(data.labels) }),
+      ...(data.dueDate !== undefined && { dueDate: data.dueDate ? new Date(data.dueDate) : null }),
+      ...(data.startDate !== undefined && { startDate: data.startDate ? new Date(data.startDate) : null }),
+    },
+    include: taskInclude,
+  })
+  await prisma.activityLog.create({ data: { action: 'updated', taskId: task.id, userId: req.userId!, metadata: JSON.stringify(data) } })
+  res.json(parseTask(updated))
+})
+
+// DELETE /api/tasks/:id
+router.delete('/:id', async (req: AuthRequest, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  await assertMember(task.projectId, req.userId!)
+  await prisma.task.delete({ where: { id: req.params.id } })
+  res.status(204).end()
+})
+
+// PATCH /api/tasks/:id/reorder
+router.patch('/:id/reorder', async (req: AuthRequest, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  await assertMember(task.projectId, req.userId!)
+  const { status, order } = z.object({ status: z.enum(['todo', 'in_progress', 'done']), order: z.number().int() }).parse(req.body)
+  // shift tasks in target column to make room
+  await prisma.task.updateMany({
+    where: { projectId: task.projectId, status, order: { gte: order }, id: { not: req.params.id } },
+    data: { order: { increment: 1 } },
+  })
+  const updated = await prisma.task.update({ where: { id: req.params.id }, data: { status, order }, include: taskInclude })
+  res.json(parseTask(updated))
+})
+
+// GET /api/tasks/:id/activity
+router.get('/:id/activity', async (req: AuthRequest, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  await assertMember(task.projectId, req.userId!)
+  const logs = await prisma.activityLog.findMany({
+    where: { taskId: req.params.id },
+    include: { user: { select: { id: true, name: true } } },
+    orderBy: { createdAt: 'desc' },
+  })
+  res.json(logs.map(l => ({ ...l, metadata: JSON.parse(l.metadata) })))
+})
+
+export default router
