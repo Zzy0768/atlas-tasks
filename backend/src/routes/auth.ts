@@ -27,7 +27,7 @@ router.post('/register', async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 10)
   const user = await prisma.user.create({ data: { email, name, passwordHash } })
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any,
   })
   res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt } })
 })
@@ -40,7 +40,7 @@ router.post('/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(password, user.passwordHash)))
     return res.status(401).json({ error: 'Invalid credentials' })
   const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: (process.env.JWT_EXPIRES_IN || '7d') as any,
   })
   res.json({ token, user: { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt } })
 })

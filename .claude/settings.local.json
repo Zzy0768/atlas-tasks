@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npm run:*)",
+      "Bash(cmd /c \"netstat -ano | findstr :3001\")",
+      "Bash(dir:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 55712)",
+      "Bash(taskkill //F //PID 56424)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

@@ -58,6 +58,11 @@ router.post('/:id/members', async (req: AuthRequest, res) => {
   const m = await assertMember(req.params.id, req.userId!)
   if (m.role !== 'owner') return res.status(403).json({ error: 'Only owner can add members' })
   const { userId, role } = z.object({ userId: z.string(), role: z.enum(['owner', 'member']).default('member') }).parse(req.body)
+  // Check if user is already a member
+  const existing = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId: req.params.id } },
+  })
+  if (existing) return res.status(409).json({ error: 'User is already a member' })
   const member = await prisma.projectMember.create({
     data: { userId, projectId: req.params.id, role },
     include: { user: { select: memberSelect } },

@@ -41,4 +41,16 @@ router.post('/:id/comments', async (req: AuthRequest, res) => {
   res.status(201).json(comment)
 })
 
+// DELETE /api/tasks/:id/comments/:commentId
+router.delete('/:id/comments/:commentId', async (req: AuthRequest, res) => {
+  const task = await prisma.task.findUnique({ where: { id: req.params.id } })
+  if (!task) return res.status(404).json({ error: 'Not found' })
+  await assertMember(task.projectId, req.userId!)
+  const comment = await prisma.comment.findUnique({ where: { id: req.params.commentId } })
+  if (!comment) return res.status(404).json({ error: 'Not found' })
+  if (comment.authorId !== req.userId) return res.status(403).json({ error: 'Only author can delete' })
+  await prisma.comment.delete({ where: { id: req.params.commentId } })
+  res.status(204).end()
+})
+
 export default router
